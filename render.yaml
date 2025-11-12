@@ -1,0 +1,9 @@
+services:
+  - type: web
+    name: nkiel-books-api
+    env: node
+    plan: free
+    repo: https://github.com/Ndirkiel/nkiel-backend
+    branch: main
+    buildCommand: npm install
+    startCommand: node server.js
