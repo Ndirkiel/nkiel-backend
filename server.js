@@ -6,7 +6,7 @@ const mongoose = require("mongoose");
 const cors = require("cors");
 const bodyParser = require("body-parser");
 const path = require("path");
-require("dotenv").config();
+require("dotenv").config(); // Load .env file
 
 // ----------------------
 // Initialize app
@@ -24,36 +24,7 @@ app.use(express.static("public")); // serve frontend (index.html, etc.)
 // ----------------------
 // MongoDB Connection
 // ----------------------
-mongoose
-  .connect(process.env.MONGODB_URI, {
-    useNewUrlParser: true,
-    useUnifiedTopology: true,
-  })
-  .then(() => console.log("✅ MongoDB connected successfully"))
-  .catch((err) => console.error("❌ MongoDB connection error:", err));
-
-// ----------------------
-// Routes
-// ----------------------
-app.use("/api/courses", require("./routes/courses"));
-app.use("/api/orders", require("./routes/orders"));
-
-// ----------------------
-// Serve Frontend (index.html)
-// ----------------------
-app.get("/", (req, res) => {
-  res.sendFile(path.join(__dirname, "public", "index.html"));
-});
-
-// ----------------------
-// Start Server
-// ----------------------
-app.listen(PORT, () => console.log(`✅ Server running on port ${PORT}`));
-
-// ----------------------
-// Optional: Preload sample courses
-// ----------------------
-const Course = require("./models/Course");
+const Course = require("./models/Course"); // load model before preloading
 
 const initialCourses = [
   {
@@ -101,4 +72,36 @@ async function preloadCourses() {
   }
 }
 
-preloadCourses();
+// Connect to MongoDB and preload courses after successful connection
+mongoose
+  .connect(process.env.MONGO_URI, {
+    useNewUrlParser: true,
+    useUnifiedTopology: true,
+  })
+  .then(async () => {
+    console.log("✅ MongoDB connected successfully");
+
+    // Preload sample courses
+    await preloadCourses();
+
+    // ----------------------
+    // Start Server
+    // ----------------------
+    app.listen(PORT, () =>
+      console.log(`✅ Server running on http://localhost:${PORT}`)
+    );
+  })
+  .catch((err) => console.error("❌ MongoDB connection error:", err));
+
+// ----------------------
+// Routes
+// ----------------------
+app.use("/api/courses", require("./routes/courses"));
+app.use("/api/orders", require("./routes/orders"));
+
+// ----------------------
+// Serve Frontend (index.html)
+// ----------------------
+app.get("/", (req, res) => {
+  res.sendFile(path.join(__dirname, "public", "index.html"));
+});
