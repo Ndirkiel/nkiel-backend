@@ -1,58 +1,104 @@
+// ----------------------
+// Import dependencies
+// ----------------------
 const express = require("express");
 const mongoose = require("mongoose");
 const cors = require("cors");
-require("dotenv").config(); // Load .env variables
+const bodyParser = require("body-parser");
+const path = require("path");
+require("dotenv").config();
 
+// ----------------------
+// Initialize app
+// ----------------------
 const app = express();
 const PORT = process.env.PORT || 3000;
 
 // ----------------------
-// Middlewares
+// Middleware
 // ----------------------
 app.use(cors());
-app.use(express.json());
+app.use(bodyParser.json());
+app.use(express.static("public")); // serve frontend (index.html, etc.)
 
 // ----------------------
 // MongoDB Connection
 // ----------------------
-mongoose.connect(process.env.MONGO_URI, {
+mongoose
+  .connect(process.env.MONGODB_URI, {
     useNewUrlParser: true,
-    useUnifiedTopology: true
-})
-.then(() => console.log("✅ MongoDB connected"))
-.catch((err) => console.error("❌ MongoDB connection error:", err));
+    useUnifiedTopology: true,
+  })
+  .then(() => console.log("✅ MongoDB connected successfully"))
+  .catch((err) => console.error("❌ MongoDB connection error:", err));
 
 // ----------------------
-// Example Schema & Model
+// Routes
 // ----------------------
-const courseSchema = new mongoose.Schema({
-    title: String,
-    instructor: String,
-    category: String,
-    price: Number
-});
-
-const Course = mongoose.model("Course", courseSchema);
+app.use("/api/courses", require("./routes/courses"));
+app.use("/api/orders", require("./routes/orders"));
 
 // ----------------------
-// API Routes
+// Serve Frontend (index.html)
 // ----------------------
 app.get("/", (req, res) => {
-    res.send("Server is running 🚀");
-});
-
-app.get("/courses", async (req, res) => {
-    try {
-        const courses = await Course.find();
-        res.json(courses);
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
+  res.sendFile(path.join(__dirname, "public", "index.html"));
 });
 
 // ----------------------
 // Start Server
 // ----------------------
-app.listen(PORT, () => {
-    console.log(`✅ Server running on port ${PORT}`);
-});
+app.listen(PORT, () => console.log(`✅ Server running on port ${PORT}`));
+
+// ----------------------
+// Optional: Preload sample courses
+// ----------------------
+const Course = require("./models/Course");
+
+const initialCourses = [
+  {
+    title: "English Basics",
+    instructor: "John Doe",
+    category: "English",
+    location: "USA",
+    price: 49.99,
+    rating: 4.5,
+    spaces: 10,
+    cover: "https://cdn-icons-png.flaticon.com/512/3135/3135715.png",
+  },
+  {
+    title: "French Advanced",
+    instructor: "Marie Curie",
+    category: "French",
+    location: "France",
+    price: 79.99,
+    rating: 4.8,
+    spaces: 8,
+    cover: "https://cdn-icons-png.flaticon.com/512/1048/1048949.png",
+  },
+  {
+    title: "Spanish Beginner",
+    instructor: "Carlos Lopez",
+    category: "Spanish",
+    location: "Spain",
+    price: 39.99,
+    rating: 4.2,
+    spaces: 12,
+    cover: "https://cdn-icons-png.flaticon.com/512/1048/1048953.png",
+  },
+];
+
+async function preloadCourses() {
+  try {
+    const count = await Course.countDocuments();
+    if (count === 0) {
+      console.log("📥 Seeding initial courses...");
+      await Course.insertMany(initialCourses);
+      console.log("✅ Initial courses added successfully.");
+    }
+  } catch (err) {
+    console.error("❌ Error seeding courses:", err);
+  }
+}
+
+preloadCourses();
