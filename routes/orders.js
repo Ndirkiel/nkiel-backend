@@ -1,30 +1,26 @@
 const express = require("express");
 const router = express.Router();
-const Order = require("../models/Order");
+const mongoose = require("mongoose");
 
-// GET all orders
-router.get("/", async (req, res) => {
-  try {
-    const orders = await Order.find();
-    res.json(orders);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+// Order schema
+const orderSchema = new mongoose.Schema({
+  customer: Object,
+  items: [{ courseId: String, qty: Number }],
+  total: Number,
+  createdAt: { type: Date, default: Date.now }
 });
 
-// POST create order
+const Order = mongoose.model("Order", orderSchema);
+
+// POST order
 router.post("/", async (req, res) => {
   try {
-    const { customer, items, total } = req.body;
-    if (!customer || !customer.name || !customer.email) {
-      return res.status(400).json({ error: "Customer name and email are required" });
-    }
-
-    const newOrder = new Order({ customer, items, total });
-    await newOrder.save();
-    res.status(201).json({ message: "Order saved", order: newOrder });
+    const order = new Order(req.body);
+    await order.save();
+    res.json({ success: true, order });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error(err);
+    res.status(400).json({ error: "Failed to place order" });
   }
 });
 
