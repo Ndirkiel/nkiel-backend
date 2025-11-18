@@ -2,21 +2,22 @@ const express = require("express");
 const mongoose = require("mongoose");
 const cors = require("cors");
 const bodyParser = require("body-parser");
-const path = require("path");
+// const path = require("path"); // No longer needed if not serving static files
 require("dotenv").config();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
 // Middleware
-app.use(cors());
+// The cors() middleware is CRITICAL for allowing your front-end to connect
+app.use(cors()); 
 app.use(bodyParser.json());
-app.use(express.static("public"));
+// app.use(express.static("public")); // <-- REMOVED: No longer serving static files
 
 // MongoDB model
 const Course = require("./models/Course");
 
-// Initial 20 courses
+// Initial 21 courses (including Zulu Beginner)
 const initialCourses = [
   { title: "English Basics", instructor: "John Doe", category: "English", location: "USA", price: 49.99, rating: 4.5, spaces: 10, cover: "https://picsum.photos/seed/english/400/250" },
   { title: "French Advanced", instructor: "Marie Curie", category: "French", location: "France", price: 79.99, rating: 4.8, spaces: 8, cover: "https://picsum.photos/seed/french/400/250" },
@@ -37,36 +38,53 @@ const initialCourses = [
   { title: "Hebrew Basics", instructor: "Yael Cohen", category: "Hebrew", location: "Israel", price: 54.99, rating: 4.5, spaces: 7, cover: "https://picsum.photos/seed/hebrew/400/250" },
   { title: "Polish Intermediate", instructor: "Jan Kowalski", category: "Polish", location: "Poland", price: 64.99, rating: 4.4, spaces: 6, cover: "https://picsum.photos/seed/polish/400/250" },
   { title: "Vietnamese Beginner", instructor: "Nguyen Thi", category: "Vietnamese", location: "Vietnam", price: 39.99, rating: 4.1, spaces: 12, cover: "https://picsum.photos/seed/vietnamese/400/250" },
-  { title: "Norwegian Basics", instructor: "Lars Hansen", category: "Norwegian", location: "Norway", price: 49.99, rating: 4.3, spaces: 8, cover: "https://picsum.photos/seed/norwegian/400/250" }
+  { title: "Norwegian Basics", instructor: "Lars Hansen", category: "Norwegian", location: "Norway", price: 49.99, rating: 4.3, spaces: 8, cover: "https://picsum.photos/seed/norwegian/400/250" },
+
+  // Extra course to make 21
+  { title: "Zulu Beginner", instructor: "Sipho Dlamini", category: "Zulu", location: "South Africa", price: 39.99, rating: 4.2, spaces: 10, cover: "https://picsum.photos/seed/zulu/400/250" }
 ];
 
-
-
-// Preload courses
+// Preload ONLY IF EMPTY
 async function preloadCourses() {
-  await Course.deleteMany({});
-  console.log("Old courses deleted. Inserting initial courses...");
-  await Course.insertMany(initialCourses);
-  console.log("Courses inserted successfully");
+  // ... (Preload logic remains the same)
+  const count = await Course.countDocuments();
+  console.log("Courses currently in DB:", count);
+
+  if (count === 0) {
+    console.log("No courses found. Inserting initial courses...");
+    await Course.insertMany(initialCourses);
+    console.log("Initial courses inserted successfully.");
+  } else {
+    console.log("Courses already exist. Skipping preload.");
+  }
 }
 
 // Connect MongoDB
-mongoose.connect(process.env.MONGO_URI, { useNewUrlParser: true, useUnifiedTopology: true })
+mongoose
+  .connect(process.env.MONGO_URI, {
+    useNewUrlParser: true,
+    useUnifiedTopology: true,
+  })
   .then(async () => {
     console.log("MongoDB connected");
+    console.log("Database:", mongoose.connection.name);
+    console.log("Host:", mongoose.connection.host);
+
     await preloadCourses();
-    app.listen(PORT, () => console.log(`Server running on http://localhost:${PORT}`));
+
+    app.listen(PORT, () =>
+      console.log(`Server running on http://localhost:${PORT}`)
+    );
   })
-  .catch(err => {
+  .catch((err) => {
     console.error("MongoDB connection error:", err);
     process.exit(1);
   });
 
-// Routes
+// Routes - This is the API structure your frontend talks to
 app.use("/api/courses", require("./routes/courses"));
 app.use("/api/orders", require("./routes/orders"));
 
-// Serve frontend
-app.get("/", (req, res) => {
-  res.sendFile(path.join(__dirname, "public", "index.html"));
-});
+// app.get("/", (req, res) => { // <-- REMOVED: This was causing the ENOENT error
+//   res.sendFile(path.join(__dirname, "public", "index.html"));
+// });
