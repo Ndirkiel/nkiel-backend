@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>N-kiel Course Store</title>
+<script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+<link href="https://cdn.jsdelivr.net/npm/sweetalert2@11/dist/sweetalert2.min.css" rel="stylesheet" />
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+<style>
+:root {
+  --accent: #2b6cb0;
+  --muted: #666;
+  --card: #fff;
+  --bg: #f6f8fb;
+  --danger: #e53e3e;
+}
+body {
+  margin: 0;
+  font-family: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, Arial;
+  background: var(--bg);
+  color: #222;
+}
+.container { max-width: 1100px; margin: 24px auto; padding: 16px; }
+header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 18px; flex-wrap: wrap; gap: 8px; position: relative; }
+.brand { display: flex; gap: 10px; align-items: center; }
+.logo { width: 48px; height: 48px; background: linear-gradient(135deg,var(--accent),#6bb6ff); border-radius: 8px; display: flex; align-items: center; justify-content: center; color: #fff; font-weight: bold; }
+.controls { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; position: relative; }
+input, select { padding: 8px 10px; border-radius: 8px; border: 1px solid #ddd; }
+button { background: var(--accent); color: #fff; padding: 8px 12px; border: none; border-radius: 8px; cursor: pointer; transition: 0.2s ease; }
+button:hover { opacity: 0.9; transform: translateY(-1px); }
+button.ghost { background: transparent; color: var(--accent); border: 1px solid #dbeafe; }
+main { display: block; align-items: start; }
+.course-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 14px; }
+.card { background: var(--card); padding: 12px; border-radius: 10px; box-shadow: 0 6px 18px rgba(15,23,42,0.06); display: flex; flex-direction: column; transition: transform 0.2s; }
+.card:hover { transform: translateY(-3px); }
+.course-image img { width: 100%; height: 160px; border-radius: 8px; object-fit: cover; background: #ddd; }
+.course-info { display: flex; flex-direction: column; gap: 6px; padding-top: 6px; }
+.course-title { font-weight: 600; font-size: 14px; }
+.course-instructor { font-size: 13px; color: var(--muted); }
+.price { color: var(--accent); font-weight: bold; }
+
+.cart-dropdown {
+  position: absolute;
+  top: 50px;
+  right: 0;
+  width: 320px;
+  background: white;
+  border-radius: 10px;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.15);
+  padding: 12px;
+  z-index: 999;
+}
+.cart-item { display: flex; gap: 10px; margin-bottom: 10px; align-items: center; }
+.cart-thumb img { width: 56px; height: 40px; border-radius: 6px; object-fit: cover; background: #ddd; }
+.total-row { display: flex; justify-content: space-between; font-weight: 700; margin-top: 10px; }
+.close-btn {
+  float: right; 
+  background: var(--danger); 
+  color: white; 
+  border: none; 
+  border-radius: 6px; 
+  padding: 2px 6px; 
+  cursor: pointer;
+}
+</style>
+</head>
+<body>
+<div id="app" class="container">
+  <header>
+    <div class="brand">
+      <div class="logo">NK</div>
+      <div>
+        <div style="font-weight:700">N-kiel Course Store</div>
+        <div style="font-size:12px;color:var(--muted)">Language Course Demo</div>
+      </div>
+    </div>
+
+    <div class="controls">
+      <input type="search" v-model="query" placeholder="Search…" />
+      <select v-model="selectedCategory">
+        <option value="">All categories</option>
+        <option v-for="c in categories" :key="c">{{ c }}</option>
+      </select>
+      <select v-model="selectedSort">
+        <option value="">Sort by</option>
+        <option value="titleAsc">Title (A–Z)</option>
+        <option value="titleDesc">Title (Z–A)</option>
+        <option value="priceAsc">Price (Low → High)</option>
+        <option value="priceDesc">Price (High → Low)</option>
+      </select>
+
+      <button @click.stop="showCart = !showCart">
+        🛒 Cart ({{ cartItems.length }})
+      </button>
+
+      <div v-if="showCart" ref="cartRef" class="cart-dropdown" @click.stop>
+        <h3>Cart
+          <button class="close-btn" @click="showCart = false">✕</button>
+        </h3>
+
+        <div v-if="cartItems.length === 0" style="color: var(--muted)">Your cart is empty</div>
+
+        <div v-for="item in cartItems" :key="item.course._id" class="cart-item">
+          <div class="cart-thumb"><img :src="item.course.cover" /></div>
+          <div style="flex:1">
+            <div style="font-weight:600">{{ item.course.title }}</div>
+            <div style="font-size:13px;color:var(--muted)">{{ item.course.instructor }}</div>
+            <div>Qty: {{ item.qty }} × {{ formatPrice(item.course.price) }}</div>
+          </div>
+          <button style="background:var(--danger);padding:4px 8px"
+                  @click="removeFromCart(item.course._id)">X</button>
+        </div>
+
+        <div class="total-row">
+          <div>Total</div>
+          <div>{{ formatPrice(cartTotal) }}</div>
+        </div>
+
+        <div style="margin-top:10px;display:flex;gap:6px">
+          <button :disabled="cartItems.length===0" @click="checkout">Checkout</button>
+          <button class="ghost" :disabled="cartItems.length===0" @click="clearCart">Clear</button>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <section>
+      <div style="margin-bottom:10px;font-weight:600">{{ filteredCourses.length }} courses found</div>
+      <div class="course-grid">
+        <div class="card" v-for="course in filteredCourses" :key="course._id">
+          <div class="course-image">
+            <img :src="course.cover" :alt="course.title" @error="handleImageError($event)" />
+          </div>
+          <div class="course-info">
+            <div class="course-title">{{ course.title }}</div>
+            <div class="course-instructor">by {{ course.instructor }}</div>
+            <div style="font-size:13px;color:var(--muted)">
+              🌍 {{ course.location }} | 📚 {{ course.category }}
+            </div>
+            <div style="font-size:13px;color:#f39c12">
+              ⭐ {{ course.rating.toFixed(1) }}
+            </div>
+            <div class="price">{{ formatPrice(course.price) }}</div>
+            <div>Spaces: {{ course.spaces }}</div>
+            <button style="margin-top:6px" @click="addToCart(course)" :disabled="course.spaces === 0">Add to Cart</button>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<script>
+const { createApp, ref, computed, onMounted, onUnmounted } = Vue;
+
+createApp({
+  setup() {
+    const API_BASE = "/api";
+
+    const courses = ref([]);
+    const query = ref("");
+    const selectedCategory = ref("");
+    const selectedSort = ref("");
+    const cart = ref([]);
+    const showCart = ref(false);
+    const cartRef = ref(null);
+
+    const categories = computed(() =>
+      Array.from(new Set(courses.value.map(c => c.category))).sort()
+    );
+
+    const fetchCourses = async () => {
+      try {
+        const res = await fetch(`${API_BASE}/courses`);
+        const data = await res.json();
+        courses.value = Array.isArray(data) ? data : [];
+      } catch {
+        courses.value = [];
+      }
+    };
+    fetchCourses();
+
+    const filteredCourses = computed(() => {
+      let filtered = [...courses.value];
+      if (query.value) {
+        const q = query.value.toLowerCase();
+        filtered = filtered.filter(c =>
+          c.title.toLowerCase().includes(q) || c.instructor.toLowerCase().includes(q)
+        );
+      }
+      if (selectedCategory.value)
+        filtered = filtered.filter(c => c.category === selectedCategory.value);
+      switch (selectedSort.value) {
+        case "titleAsc": filtered.sort((a,b)=>a.title.localeCompare(b.title)); break;
+        case "titleDesc": filtered.sort((a,b)=>b.title.localeCompare(a.title)); break;
+        case "priceAsc": filtered.sort((a,b)=>a.price - b.price); break;
+        case "priceDesc": filtered.sort((a,b)=>b.price - a.price); break;
+      }
+      return filtered;
+    });
+
+    const cartItems = computed(() => {
+      const map = {};
+      cart.value.forEach(id => (map[id] = (map[id] || 0) + 1));
+      return Object.keys(map).map(id => ({
+        course: courses.value.find(c => c._id === id),
+        qty: map[id]
+      }));
+    });
+
+    const cartTotal = computed(() =>
+      cartItems.value.reduce((sum,i)=>sum+i.course.price*i.qty,0)
+    );
+
+    const formatPrice = p => "$" + p.toFixed(2);
+
+    const addToCart = course => {
+      if(course.spaces <= 0) return Swal.fire("Sold Out","No spaces left","error");
+      cart.value.push(course._id);
+      course.spaces--; 
+    };
+
+    const removeFromCart = id => {
+      const index = cart.value.indexOf(id);
+      if(index !== -1) {
+        cart.value.splice(index, 1);
+        const c = courses.value.find(c => c._id === id);
+        if(c) c.spaces++; 
+      }
+    };
+
+    const clearCart = () => {
+      cartItems.value.forEach(item => {
+        const c = courses.value.find(c => c._id === item.course._id);
+        if(c) c.spaces += item.qty; 
+      });
+      cart.value = [];
+    };
+
+    const handleImageError = e => e.target.src="https://via.placeholder.com/600x400?text=No+Image";
+
+    const checkout = async () => {
+      if(cartItems.value.length === 0) return;
+
+      const { value: form } = await Swal.fire({
+        title: "Checkout",
+        html: `
+          <input id="name" placeholder="Full Name*" class="swal2-input" required>
+          <input id="email" type="email" placeholder="Email*" class="swal2-input" required>
+          <input id="phone" placeholder="Phone" class="swal2-input">
+          <input id="address" placeholder="Address" class="swal2-input">
+        `,
+        focusConfirm: false,
+        showCancelButton: true,
+        confirmButtonText: "Place Order",
+        cancelButtonText: "Cancel",
+        preConfirm: () => {
+          const name = document.getElementById("name").value;
+          const email = document.getElementById("email").value;
+          const phone = document.getElementById("phone").value;
+          const address = document.getElementById("address").value;
+          if(!name || !email) Swal.showValidationMessage("Name and email are required");
+          return { name, email, phone, address };
+        }
+      });
+
+      if(!form) return;
+
+      try {
+        const res = await fetch(`${API_BASE}/orders`, {
+          method: "POST",
+          headers: {"Content-Type":"application/json"},
+          body: JSON.stringify({
+            customer: form,
+            items: cartItems.value.map(i => ({
+              courseId: i.course._id,
+              title: i.course.title,
+              price: i.course.price,
+              qty: i.qty
+            })),
+            total: cartTotal.value
+          })
+        });
+
+        const data = await res.json();
+        if(res.ok){
+          Swal.fire("✅ Order Complete","Order placed successfully","success");
+          cart.value = [];
+          showCart.value = false;
+          // refresh courses to get updated spaces
+          fetchCourses();
+        } else {
+          Swal.fire("❌ Error", data.error || "Could not place order","error");
+          // get fresh data in case spaces changed
+          fetchCourses();
+        }
+
+      } catch(err){
+        Swal.fire("❌ Error", err.message,"error");
+      }
+    };
+
+    const handleClickOutside = event => {
+      if(cartRef.value && !cartRef.value.contains(event.target) && showCart.value){
+        showCart.value = false;
+      }
+    };
+    onMounted(()=>document.addEventListener("click", handleClickOutside));
+    onUnmounted(()=>document.removeEventListener("click", handleClickOutside));
+
+    return {
+      courses, query, selectedCategory, selectedSort, categories,
+      filteredCourses, cart, cartItems, cartTotal, formatPrice,
+      addToCart, removeFromCart, clearCart, handleImageError, checkout,
+      showCart, cartRef
+    };
+  }
+}).mount("#app");
+</script>
+</body>
+</html>

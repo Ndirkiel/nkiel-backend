@@ -1,204 +1,91 @@
-// server.js
 const express = require("express");
-const { MongoClient, ObjectId } = require("mongodb");
+const mongoose = require("mongoose");
 const cors = require("cors");
 const bodyParser = require("body-parser");
 const path = require("path");
 require("dotenv").config();
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 10000;
 
 // Middleware
 app.use(cors());
 app.use(bodyParser.json());
-app.use(express.static(path.join(__dirname, "public"))); // serve static files
 
-// MongoDB collections
-let client;
-let db;
-let Courses;
-let Orders;
+// MongoDB connection
+mongoose.connect(process.env.MONGO_URI, {
+  useNewUrlParser: true,
+  useUnifiedTopology: true,
+})
+.then(() => console.log("MongoDB connected"))
+.catch(err => console.error("MongoDB connection error:", err));
 
-// === 20 COURSES ===
+// Course Model
+const courseSchema = new mongoose.Schema({
+  title: String,
+  instructor: String,
+  category: String,
+  location: String,
+  price: Number,
+  rating: Number,
+  spaces: Number,
+  cover: String,
+});
+const Course = mongoose.model("Course", courseSchema);
+
+// Order Model
+const orderSchema = new mongoose.Schema({
+  customer: Object,
+  items: Array,
+  total: Number,
+  createdAt: { type: Date, default: Date.now }
+});
+const Order = mongoose.model("Order", orderSchema);
+
+// Seed initial courses if not present
 const initialCourses = [
-  { title: "English Basics", instructor: "John Doe", category: "English", location: "USA", price: 49.99, rating: 4.5, spaces: 10, cover: "https://picsum.photos/seed/english/400/250" },
-  { title: "French Advanced", instructor: "Marie Curie", category: "French", location: "France", price: 79.99, rating: 4.8, spaces: 8, cover: "https://picsum.photos/seed/french/400/250" },
-  { title: "Chinese Advanced", instructor: "Li Wei", category: "Chinese", location: "China", price: 89.99, rating: 4.9, spaces: 5, cover: "https://picsum.photos/seed/chinese/400/250" },
-  { title: "Italian Beginner", instructor: "Giovanni Rossi", category: "Italian", location: "Italy", price: 44.99, rating: 4.3, spaces: 10, cover: "https://picsum.photos/seed/italian/400/250" },
-  { title: "Japanese Basics", instructor: "Yuki Tanaka", category: "Japanese", location: "Japan", price: 69.99, rating: 4.7, spaces: 7, cover: "https://picsum.photos/seed/japanese/400/250" },
-  { title: "Turkish Basics", instructor: "Ahmet Yilmaz", category: "Turkish", location: "Turkey", price: 49.99, rating: 4.3, spaces: 9, cover: "https://picsum.photos/seed/turkish/400/250" },
-  { title: "Hebrew Basics", instructor: "Yael Cohen", category: "Hebrew", location: "Israel", price: 54.99, rating: 4.5, spaces: 7, cover: "https://picsum.photos/seed/hebrew/400/250" },
-  { title: "Spanish Beginner", instructor: "Carlos Ruiz", category: "Spanish", location: "Spain", price: 39.99, rating: 4.2, spaces: 12, cover: "https://picsum.photos/seed/spanish/400/250" },
-  { title: "Arabic Basics", instructor: "Fatima Al-Zahra", category: "Arabic", location: "Egypt", price: 54.99, rating: 4.5, spaces: 8, cover: "https://picsum.photos/seed/arabic/400/250" },
-  { title: "Korean Basics", instructor: "Kim Minsoo", category: "Korean", location: "South Korea", price: 59.99, rating: 4.6, spaces: 6, cover: "https://picsum.photos/seed/korean/400/250" },
-  { title: "Greek Beginner", instructor: "Nikos Papadopoulos", category: "Greek", location: "Greece", price: 44.99, rating: 4.2, spaces: 8, cover: "https://picsum.photos/seed/greek/400/250" },
-  { title: "Polish Intermediate", instructor: "Jan Kowalski", category: "Polish", location: "Poland", price: 64.99, rating: 4.4, spaces: 6, cover: "https://picsum.photos/seed/polish/400/250" },
-  { title: "Vietnamese Beginner", instructor: "Nguyen Thi", category: "Vietnamese", location: "Vietnam", price: 39.99, rating: 4.1, spaces: 12, cover: "https://picsum.photos/seed/vietnamese/400/250" },
-  { title: "German Intermediate", instructor: "Hans Müller", category: "German", location: "Germany", price: 59.99, rating: 4.6, spaces: 9, cover: "https://picsum.photos/seed/german/400/250" },
-  { title: "Russian Intermediate", instructor: "Ivan Petrov", category: "Russian", location: "Russia", price: 64.99, rating: 4.4, spaces: 9, cover: "https://picsum.photos/seed/russian/400/250" },
-  { title: "Portuguese Beginner", instructor: "Ana Silva", category: "Portuguese", location: "Brazil", price: 49.99, rating: 4.2, spaces: 10, cover: "https://picsum.photos/seed/portuguese/400/250" },
-  { title: "Swahili Beginner", instructor: "Amina Chui", category: "Swahili", location: "Kenya", price: 39.99, rating: 4.1, spaces: 12, cover: "https://picsum.photos/seed/swahili/400/250" },
-  { title: "Hindi Intermediate", instructor: "Ravi Kumar", category: "Hindi", location: "India", price: 69.99, rating: 4.5, spaces: 7, cover: "https://picsum.photos/seed/hindi/400/250" },
-  { title: "Dutch Advanced", instructor: "Sophie Janssen", category: "Dutch", location: "Netherlands", price: 79.99, rating: 4.7, spaces: 5, cover: "https://picsum.photos/seed/dutch/400/250" },
-  { title: "Norwegian Basics", instructor: "Lars Hansen", category: "Norwegian", location: "Norway", price: 49.99, rating: 4.3, spaces: 8, cover: "https://picsum.photos/seed/norwegian/400/250" }
+  // Add your courses here or leave empty
 ];
 
-// Preload courses if empty
-async function preloadCoursesIfEmpty() {
-  const count = await Courses.countDocuments();
-  console.log("Courses in DB:", count);
-  if (count === 0) {
-    console.log("Inserting initial courses...");
-    await Courses.insertMany(initialCourses);
-    console.log("Courses inserted.");
-  } else {
-    console.log("Skipping seed - courses already present.");
-  }
-}
-
-// MongoDB connection and server start
-async function start() {
-  try {
-    client = new MongoClient(process.env.MONGO_URI, { maxPoolSize: 10 });
-    await client.connect();
-    db = client.db();
-    Courses = db.collection("courses");
-    Orders = db.collection("orders");
-
-    console.log("MongoDB connected");
-
-    await preloadCoursesIfEmpty();
-
-    app.listen(PORT, () => {
-      console.log(`Server running on http://localhost:${PORT}`);
-    });
-  } catch (err) {
-    console.error("MongoDB connection error:", err);
-    process.exit(1);
-  }
-}
-
-start();
-
-// Helper to convert _id to string
-function toSerializable(obj) {
-  if (!obj) return obj;
-  if (Array.isArray(obj)) return obj.map(toSerializable);
-  const out = { ...obj };
-  if (out._id && out._id.toString) out._id = out._id.toString();
-  return out;
-}
-
-// ==================== API ROUTES ====================
-
-// Courses
-app.get("/api/courses", async (req, res) => {
-  try {
-    const list = await Courses.find().toArray();
-    res.json(list.map(toSerializable));
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Could not fetch courses" });
+Course.countDocuments().then(count => {
+  if(count === 0) {
+    Course.insertMany(initialCourses).then(() => console.log("Courses seeded"));
   }
 });
 
-app.get("/api/courses/:id", async (req, res) => {
-  try {
-    const id = req.params.id;
-    if (!ObjectId.isValid(id)) return res.status(400).json({ error: "Invalid id" });
-    const course = await Courses.findOne({ _id: new ObjectId(id) });
-    if (!course) return res.status(404).json({ error: "Not found" });
-    res.json(toSerializable(course));
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Server error" });
-  }
+// === API Routes ===
+
+// Get all courses
+app.get("/courses", async (req, res) => {
+  const courses = await Course.find();
+  res.json(courses);
 });
 
-app.post("/api/courses", async (req, res) => {
+// Create order
+app.post("/orders", async (req, res) => {
   try {
-    const course = req.body;
-    const result = await Courses.insertOne(course);
-    res.status(201).json({ success: true, id: result.insertedId.toString() });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Could not add course" });
-  }
-});
+    const { customer, items, total } = req.body;
+    const order = new Order({ customer, items, total });
+    await order.save();
 
-// Orders
-app.get("/api/orders", async (req, res) => {
-  try {
-    const ordersList = await Orders.find().toArray();
-    res.json(ordersList.map(toSerializable));
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Could not fetch orders" });
-  }
-});
-
-app.post("/api/orders", async (req, res) => {
-  try {
-    const order = req.body;
-    if (!order || !order.items || !Array.isArray(order.items) || order.items.length === 0) {
-      return res.status(400).json({ error: "Invalid order" });
+    // Update spaces in courses
+    for (const item of items) {
+      await Course.findByIdAndUpdate(item.courseId, { $inc: { spaces: -item.qty } });
     }
 
-    const idQty = {};
-    for (const it of order.items) {
-      if (!it.courseId || !ObjectId.isValid(it.courseId)) {
-        return res.status(400).json({ error: "Invalid courseId in items" });
-      }
-      idQty[it.courseId] = (idQty[it.courseId] || 0) + (it.qty || 1);
-    }
-
-    const ids = Object.keys(idQty).map(id => new ObjectId(id));
-    const courses = await Courses.find({ _id: { $in: ids } }).toArray();
-    if (courses.length !== ids.length) return res.status(400).json({ error: "One or more courses not found" });
-
-    for (const c of courses) {
-      const need = idQty[c._id.toString()];
-      if (c.spaces < need) return res.status(400).json({ error: `Not enough spaces for ${c.title}` });
-    }
-
-    const bulkOps = courses.map(c => ({
-      updateOne: { filter: { _id: c._id }, update: { $inc: { spaces: -idQty[c._id.toString()] } } }
-    }));
-    await Courses.bulkWrite(bulkOps);
-
-    const orderDoc = {
-      customer: order.customer || {},
-      items: order.items,
-      total: order.total || 0,
-      createdAt: new Date()
-    };
-    const result = await Orders.insertOne(orderDoc);
-
-    res.json({ success: true, id: result.insertedId.toString() });
+    res.json({ success: true, order });
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Could not place order" });
+    res.status(500).json({ error: err.message });
   }
 });
 
-app.delete("/api/orders/:id", async (req, res) => {
-  try {
-    const id = req.params.id;
-    if (!ObjectId.isValid(id)) return res.status(400).json({ error: "Invalid id" });
+// Serve frontend static files
+app.use(express.static(path.join(__dirname, "public")));
 
-    const result = await Orders.deleteOne({ _id: new ObjectId(id) });
-    if (result.deletedCount === 0) return res.status(404).json({ error: "Order not found" });
-
-    res.json({ success: true });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Could not delete order" });
-  }
-});
-
-// ==================== SPA ROUTE ====================
-// Catch-all to serve index.html for frontend routes (after API routes)
+// Catch-all to serve index.html for frontend routes
 app.get("*", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "index.html"));
 });
+
+// Start server
+app.listen(PORT, () => console.log(`Server running on http://localhost:${PORT}`));
