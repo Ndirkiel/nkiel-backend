@@ -3,13 +3,16 @@ const express = require("express");
 const { MongoClient, ObjectId } = require("mongodb");
 const cors = require("cors");
 const bodyParser = require("body-parser");
+const path = require("path");
 require("dotenv").config();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// Middleware
 app.use(cors());
 app.use(bodyParser.json());
+app.use(express.static(path.join(__dirname, "public"))); // serve static files
 
 // MongoDB collections
 let client;
@@ -17,7 +20,7 @@ let db;
 let Courses;
 let Orders;
 
-// === 20 COURSES (cleaned image URLs) ===
+// === 20 COURSES ===
 const initialCourses = [
   { title: "English Basics", instructor: "John Doe", category: "English", location: "USA", price: 49.99, rating: 4.5, spaces: 10, cover: "https://picsum.photos/seed/english/400/250" },
   { title: "French Advanced", instructor: "Marie Curie", category: "French", location: "France", price: 79.99, rating: 4.8, spaces: 8, cover: "https://picsum.photos/seed/french/400/250" },
@@ -41,7 +44,7 @@ const initialCourses = [
   { title: "Norwegian Basics", instructor: "Lars Hansen", category: "Norwegian", location: "Norway", price: 49.99, rating: 4.3, spaces: 8, cover: "https://picsum.photos/seed/norwegian/400/250" }
 ];
 
-// Preload courses if DB is empty
+// Preload courses if empty
 async function preloadCoursesIfEmpty() {
   const count = await Courses.countDocuments();
   console.log("Courses in DB:", count);
@@ -54,7 +57,7 @@ async function preloadCoursesIfEmpty() {
   }
 }
 
-// Start server & MongoDB connection
+// MongoDB connection and server start
 async function start() {
   try {
     client = new MongoClient(process.env.MONGO_URI, { maxPoolSize: 10 });
@@ -78,7 +81,7 @@ async function start() {
 
 start();
 
-// Helper to format _id as string
+// Helper to convert _id to string
 function toSerializable(obj) {
   if (!obj) return obj;
   if (Array.isArray(obj)) return obj.map(toSerializable);
@@ -87,9 +90,9 @@ function toSerializable(obj) {
   return out;
 }
 
-// ---- API ROUTES ----
+// ==================== API ROUTES ====================
 
-// GET all courses
+// Courses
 app.get("/api/courses", async (req, res) => {
   try {
     const list = await Courses.find().toArray();
@@ -100,7 +103,6 @@ app.get("/api/courses", async (req, res) => {
   }
 });
 
-// GET course by ID
 app.get("/api/courses/:id", async (req, res) => {
   try {
     const id = req.params.id;
@@ -114,7 +116,6 @@ app.get("/api/courses/:id", async (req, res) => {
   }
 });
 
-// POST new course
 app.post("/api/courses", async (req, res) => {
   try {
     const course = req.body;
@@ -126,7 +127,17 @@ app.post("/api/courses", async (req, res) => {
   }
 });
 
-// POST order
+// Orders
+app.get("/api/orders", async (req, res) => {
+  try {
+    const ordersList = await Orders.find().toArray();
+    res.json(ordersList.map(toSerializable));
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Could not fetch orders" });
+  }
+});
+
 app.post("/api/orders", async (req, res) => {
   try {
     const order = req.body;
@@ -171,18 +182,6 @@ app.post("/api/orders", async (req, res) => {
   }
 });
 
-// GET all orders
-app.get("/api/orders", async (req, res) => {
-  try {
-    const ordersList = await Orders.find().toArray();
-    res.json(ordersList.map(toSerializable));
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Could not fetch orders" });
-  }
-});
-
-// DELETE order by ID
 app.delete("/api/orders/:id", async (req, res) => {
   try {
     const id = req.params.id;
@@ -196,4 +195,10 @@ app.delete("/api/orders/:id", async (req, res) => {
     console.error(err);
     res.status(500).json({ error: "Could not delete order" });
   }
+});
+
+// ==================== SPA ROUTE ====================
+// Catch-all to serve index.html for frontend routes (after API routes)
+app.get("*", (req, res) => {
+  res.sendFile(path.join(__dirname, "public", "index.html"));
 });
