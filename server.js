@@ -1,20 +1,24 @@
+// server.js
 const express = require("express");
-const mongoose = require("mongoose");
+const { MongoClient, ObjectId } = require("mongodb");
 const cors = require("cors");
 const bodyParser = require("body-parser");
+const path = require("path");
 require("dotenv").config();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Middleware
 app.use(cors());
 app.use(bodyParser.json());
+app.use(express.static(path.join(__dirname, "public")));
 
-// Model
-const Course = require("./models/Course");
+let client;
+let db;
+let Courses;
+let Orders;
 
-// === 20 FULL COURSES ===
+// === 20 COURSES (cleaned image URLs) ===
 const initialCourses = [
   { title: "English Basics", instructor: "John Doe", category: "English", location: "USA", price: 49.99, rating: 4.5, spaces: 10, cover: "https://picsum.photos/seed/english/400/250" },
   { title: "French Advanced", instructor: "Marie Curie", category: "French", location: "France", price: 79.99, rating: 4.8, spaces: 8, cover: "https://picsum.photos/seed/french/400/250" },
@@ -38,50 +42,178 @@ const initialCourses = [
   { title: "Norwegian Basics", instructor: "Lars Hansen", category: "Norwegian", location: "Norway", price: 49.99, rating: 4.3, spaces: 8, cover: "https://picsum.photos/seed/norwegian/400/250" }
 ];
 
-// Preload DB only if empty
-async function preloadCourses() {
-  const count = await Course.countDocuments();
+async function preloadCoursesIfEmpty() {
+  const count = await Courses.countDocuments();
   console.log("Courses in DB:", count);
-
   if (count === 0) {
     console.log("Inserting initial courses...");
-    await Course.insertMany(initialCourses);
+    // insertMany will create ObjectIds automatically
+    await Courses.insertMany(initialCourses);
     console.log("Courses inserted.");
   } else {
-    console.log("Courses already exist. Skipping preload.");
+    console.log("Skipping seed - courses already present.");
   }
 }
 
-// MongoDB Connect
-mongoose
-  .connect(process.env.MONGO_URI, {
-    useNewUrlParser: true,
-    useUnifiedTopology: true,
-  })
-  .then(async () => {
+async function start() {
+  try {
+    client = new MongoClient(process.env.MONGO_URI, { maxPoolSize: 10 });
+    await client.connect();
+    db = client.db(); // uses DB from connection string (or default)
+    Courses = db.collection("courses");
+    Orders = db.collection("orders");
+
     console.log("MongoDB connected");
 
-    await preloadCourses();
+    await preloadCoursesIfEmpty();
 
-    app.listen(PORT, () =>
-      console.log(`Server running on http://localhost:${PORT}`)
-    );
-  })
-  .catch((err) => {
-    console.error("MongoDB error:", err);
+    app.listen(PORT, () => {
+      console.log(`Server running on http://localhost:${PORT}`);
+    });
+  } catch (err) {
+    console.error("MongoDB connection error:", err);
     process.exit(1);
-  });
+  }
+}
 
-// API Routes
-app.use("/api/courses", require("./routes/courses"));
-app.use("/api/orders", require("./routes/orders"));
+start();
 
-// === ROOT ROUTE (SHOW ALL COURSES ON RENDER HOME PAGE) ===
-app.get("/", async (req, res) => {
+// ---- Helper to format _id as string for frontend ----
+function toSerializable(obj) {
+  if (!obj) return obj;
+  if (Array.isArray(obj)) return obj.map(toSerializable);
+  const out = { ...obj };
+  if (out._id && out._id.toString) out._id = out._id.toString();
+  return out;
+}
+
+// ---- API: GET all courses ----
+app.get("/api/courses", async (req, res) => {
   try {
-    const courses = await Course.find();
-    res.json(courses);
-  } catch (error) {
-    res.status(500).json({ message: "Could not load courses" });
+    const list = await Courses.find().toArray();
+    res.json(list.map(toSerializable));
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Could not fetch courses" });
   }
 });
+
+// ---- API: GET course by id ----
+app.get("/api/courses/:id", async (req, res) => {
+  try {
+    const id = req.params.id;
+    if (!ObjectId.isValid(id)) return res.status(400).json({ error: "Invalid id" });
+    const course = await Courses.findOne({ _id: new ObjectId(id) });
+    if (!course) return res.status(404).json({ error: "Not found" });
+    res.json(toSerializable(course));
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+// ---- API: POST order (checks availability & decrements spaces) ----
+app.post("/api/orders", async (req, res) => {
+  try {
+    const order = req.body;
+    if (!order || !order.items || !Array.isArray(order.items) || order.items.length === 0) {
+      return res.status(400).json({ error: "Invalid order" });
+    }
+
+    // Build id => qty map
+    const idQty = {};
+    for (const it of order.items) {
+      if (!it.courseId || !ObjectId.isValid(it.courseId)) {
+        return res.status(400).json({ error: "Invalid courseId in items" });
+      }
+      idQty[it.courseId] = (idQty[it.courseId] || 0) + (it.qty || 1);
+    }
+
+    // Fetch the courses and validate availability
+    const ids = Object.keys(idQty).map(id => new ObjectId(id));
+    const courses = await Courses.find({ _id: { $in: ids } }).toArray();
+    if (courses.length !== ids.length) {
+      return res.status(400).json({ error: "One or more courses not found" });
+    }
+
+    // Check spaces
+    for (const c of courses) {
+      const need = idQty[c._id.toString()];
+      if (c.spaces < need) {
+        return res.status(400).json({ error: `Not enough spaces for ${c.title}` });
+      }
+    }
+
+    // Decrement spaces with bulk operations
+    const bulkOps = courses.map(c => {
+      const dec = idQty[c._id.toString()];
+      return {
+        updateOne: {
+          filter: { _id: c._id },
+          update: { $inc: { spaces: -dec } }
+        }
+      };
+    });
+    await Courses.bulkWrite(bulkOps);
+
+    // Save order with timestamp
+    const orderDoc = {
+      customer: order.customer || {},
+      items: order.items,
+      total: order.total || 0,
+      createdAt: new Date()
+    };
+    const result = await Orders.insertOne(orderDoc);
+
+    res.json({ success: true, id: result.insertedId.toString() });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Could not place order" });
+  }
+});
+
+// ---- Serve frontend routes (for SPA) ----
+app.get(/^\/(?!api).*/, (req, res) => {
+  res.sendFile(path.join(__dirname, "public", "index.html"));
+});
+
+app.post("/api/courses", async (req, res) => {
+  try {
+    const course = req.body;
+    const result = await Courses.insertOne(course);
+    res.status(201).json({ success: true, id: result.insertedId.toString() });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Could not add course" });
+  }
+});
+
+// GET all orders
+app.get("/api/orders", async (req, res) => {
+  try {
+    const ordersList = await Orders.find().toArray();
+    res.json(ordersList.map(toSerializable));
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Could not fetch orders" });
+  }
+});
+
+
+// DELETE an order by id
+app.delete("/api/orders/:id", async (req, res) => {
+  try {
+    const id = req.params.id;
+    if (!ObjectId.isValid(id)) return res.status(400).json({ error: "Invalid id" });
+    
+    const result = await Orders.deleteOne({ _id: new ObjectId(id) });
+    
+    if (result.deletedCount === 0) return res.status(404).json({ error: "Order not found" });
+    
+    res.json({ success: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Could not delete order" });
+  }
+});
+

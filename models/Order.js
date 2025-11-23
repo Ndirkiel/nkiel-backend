@@ -15,7 +15,7 @@ const orderSchema = new mongoose.Schema({
   },
   items: [
     {
-      courseId: { type: String, required: true },
+      courseId: { type: mongoose.Schema.Types.ObjectId, ref: "Course", required: true },
       title: String,
       price: Number,
       qty: Number

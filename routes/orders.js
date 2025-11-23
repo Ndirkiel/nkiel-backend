@@ -1,32 +1,45 @@
 const express = require("express");
 const router = express.Router();
-const Order = require("../models/Order"); // Import the Order model
-const Course = require("../models/Course"); // Import the Course model for updates
+const Order = require("../models/Order");
+const Course = require("../models/Course");
 
-// POST /api/orders: Process order and update course spaces
+// GET all orders
+router.get("/", async (req, res) => {
+  try {
+    const orders = await Order.find(); // simple find
+    res.json(orders);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST a new order
 router.post("/", async (req, res) => {
-    const { items } = req.body;
-    
-    try {
-        // 1. Save the new order record
-        const order = new Order(req.body);
-        await order.save();
+  try {
+    const { customer, items, total } = req.body;
 
-        // 2. ⭐ CRITICAL FIX: Loop through items and update course spaces
-        if (items && Array.isArray(items)) {
-            for (const item of items) {
-                // Find the course by ID and decrement the spaces field using $inc
-                await Course.findByIdAndUpdate(item.courseId, {
-                    $inc: { spaces: -item.qty } // Decrement spaces by the quantity ordered
-                });
-            }
-        }
-        
-        res.status(201).json({ success: true, message: "Order placed and courses updated successfully." });
-    } catch (err) {
-        console.error(err);
-        res.status(400).json({ error: "Failed to place order or update courses" });
-    }
+    if (!customer || !items || items.length === 0) {
+      return res.status(400).json({ error: "Invalid order data" });
+    }
+
+    // Reduce spaces for each course
+    for (let item of items) {
+      const course = await Course.findById(item.courseId);
+      if (!course) return res.status(404).json({ error: `Course not found: ${item.courseId}` });
+      if (course.spaces < item.qty)
+        return res.status(400).json({ error: `Not enough spaces for ${course.title}` });
+      course.spaces -= item.qty;
+      await course.save();
+    }
+
+    const order = new Order({ customer, items, total });
+    await order.save();
+
+    res.status(201).json({ message: "Order placed successfully", order });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message });
+  }
 });
 
 module.exports = router;
