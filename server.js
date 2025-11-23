@@ -3,7 +3,6 @@ const express = require("express");
 const { MongoClient, ObjectId } = require("mongodb");
 const cors = require("cors");
 const bodyParser = require("body-parser");
-const path = require("path");
 require("dotenv").config();
 
 const app = express();
@@ -11,8 +10,8 @@ const PORT = process.env.PORT || 3000;
 
 app.use(cors());
 app.use(bodyParser.json());
-app.use(express.static(path.join(__dirname, "public")));
 
+// MongoDB collections
 let client;
 let db;
 let Courses;
@@ -42,12 +41,12 @@ const initialCourses = [
   { title: "Norwegian Basics", instructor: "Lars Hansen", category: "Norwegian", location: "Norway", price: 49.99, rating: 4.3, spaces: 8, cover: "https://picsum.photos/seed/norwegian/400/250" }
 ];
 
+// Preload courses if DB is empty
 async function preloadCoursesIfEmpty() {
   const count = await Courses.countDocuments();
   console.log("Courses in DB:", count);
   if (count === 0) {
     console.log("Inserting initial courses...");
-    // insertMany will create ObjectIds automatically
     await Courses.insertMany(initialCourses);
     console.log("Courses inserted.");
   } else {
@@ -55,11 +54,12 @@ async function preloadCoursesIfEmpty() {
   }
 }
 
+// Start server & MongoDB connection
 async function start() {
   try {
     client = new MongoClient(process.env.MONGO_URI, { maxPoolSize: 10 });
     await client.connect();
-    db = client.db(); // uses DB from connection string (or default)
+    db = client.db();
     Courses = db.collection("courses");
     Orders = db.collection("orders");
 
@@ -78,7 +78,7 @@ async function start() {
 
 start();
 
-// ---- Helper to format _id as string for frontend ----
+// Helper to format _id as string
 function toSerializable(obj) {
   if (!obj) return obj;
   if (Array.isArray(obj)) return obj.map(toSerializable);
@@ -87,7 +87,9 @@ function toSerializable(obj) {
   return out;
 }
 
-// ---- API: GET all courses ----
+// ---- API ROUTES ----
+
+// GET all courses
 app.get("/api/courses", async (req, res) => {
   try {
     const list = await Courses.find().toArray();
@@ -98,7 +100,7 @@ app.get("/api/courses", async (req, res) => {
   }
 });
 
-// ---- API: GET course by id ----
+// GET course by ID
 app.get("/api/courses/:id", async (req, res) => {
   try {
     const id = req.params.id;
@@ -112,7 +114,19 @@ app.get("/api/courses/:id", async (req, res) => {
   }
 });
 
-// ---- API: POST order (checks availability & decrements spaces) ----
+// POST new course
+app.post("/api/courses", async (req, res) => {
+  try {
+    const course = req.body;
+    const result = await Courses.insertOne(course);
+    res.status(201).json({ success: true, id: result.insertedId.toString() });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Could not add course" });
+  }
+});
+
+// POST order
 app.post("/api/orders", async (req, res) => {
   try {
     const order = req.body;
@@ -120,7 +134,6 @@ app.post("/api/orders", async (req, res) => {
       return res.status(400).json({ error: "Invalid order" });
     }
 
-    // Build id => qty map
     const idQty = {};
     for (const it of order.items) {
       if (!it.courseId || !ObjectId.isValid(it.courseId)) {
@@ -129,34 +142,20 @@ app.post("/api/orders", async (req, res) => {
       idQty[it.courseId] = (idQty[it.courseId] || 0) + (it.qty || 1);
     }
 
-    // Fetch the courses and validate availability
     const ids = Object.keys(idQty).map(id => new ObjectId(id));
     const courses = await Courses.find({ _id: { $in: ids } }).toArray();
-    if (courses.length !== ids.length) {
-      return res.status(400).json({ error: "One or more courses not found" });
-    }
+    if (courses.length !== ids.length) return res.status(400).json({ error: "One or more courses not found" });
 
-    // Check spaces
     for (const c of courses) {
       const need = idQty[c._id.toString()];
-      if (c.spaces < need) {
-        return res.status(400).json({ error: `Not enough spaces for ${c.title}` });
-      }
+      if (c.spaces < need) return res.status(400).json({ error: `Not enough spaces for ${c.title}` });
     }
 
-    // Decrement spaces with bulk operations
-    const bulkOps = courses.map(c => {
-      const dec = idQty[c._id.toString()];
-      return {
-        updateOne: {
-          filter: { _id: c._id },
-          update: { $inc: { spaces: -dec } }
-        }
-      };
-    });
+    const bulkOps = courses.map(c => ({
+      updateOne: { filter: { _id: c._id }, update: { $inc: { spaces: -idQty[c._id.toString()] } } }
+    }));
     await Courses.bulkWrite(bulkOps);
 
-    // Save order with timestamp
     const orderDoc = {
       customer: order.customer || {},
       items: order.items,
@@ -172,22 +171,6 @@ app.post("/api/orders", async (req, res) => {
   }
 });
 
-// ---- Serve frontend routes (for SPA) ----
-app.get(/^\/(?!api).*/, (req, res) => {
-  res.sendFile(path.join(__dirname, "public", "index.html"));
-});
-
-app.post("/api/courses", async (req, res) => {
-  try {
-    const course = req.body;
-    const result = await Courses.insertOne(course);
-    res.status(201).json({ success: true, id: result.insertedId.toString() });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Could not add course" });
-  }
-});
-
 // GET all orders
 app.get("/api/orders", async (req, res) => {
   try {
@@ -199,21 +182,18 @@ app.get("/api/orders", async (req, res) => {
   }
 });
 
-
-// DELETE an order by id
+// DELETE order by ID
 app.delete("/api/orders/:id", async (req, res) => {
   try {
     const id = req.params.id;
     if (!ObjectId.isValid(id)) return res.status(400).json({ error: "Invalid id" });
-    
+
     const result = await Orders.deleteOne({ _id: new ObjectId(id) });
-    
     if (result.deletedCount === 0) return res.status(404).json({ error: "Order not found" });
-    
+
     res.json({ success: true });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Could not delete order" });
   }
 });
-
