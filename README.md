@@ -1,0 +1,2 @@
+- GITHUB REPO LINK: https://github.com/Ndirkiel/nkiel-backend
+- HOSTING LINK: https://nkiel-backend-5.onrender.com
