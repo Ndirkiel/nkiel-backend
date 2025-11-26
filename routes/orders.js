@@ -3,17 +3,17 @@ const router = express.Router();
 const Order = require("../models/Order");
 const Course = require("../models/Course");
 
-// GET all orders
+
 router.get("/", async (req, res) => {
   try {
-    const orders = await Order.find(); // simple find
+    const orders = await Order.find(); 
     res.json(orders);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// POST a new order
+
 router.post("/", async (req, res) => {
   try {
     const { customer, items, total } = req.body;
@@ -22,7 +22,7 @@ router.post("/", async (req, res) => {
       return res.status(400).json({ error: "Invalid order data" });
     }
 
-    // Reduce spaces for each course
+    
     for (let item of items) {
       const course = await Course.findById(item.courseId);
       if (!course) return res.status(404).json({ error: `Course not found: ${item.courseId}` });

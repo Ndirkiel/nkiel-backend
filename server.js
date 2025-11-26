@@ -1,4 +1,4 @@
-// server.js
+
 const express = require("express");
 const { MongoClient, ObjectId } = require("mongodb");
 const cors = require("cors");
@@ -9,18 +9,16 @@ require("dotenv").config();
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Middleware
 app.use(cors());
 app.use(bodyParser.json());
-app.use(express.static(path.join(__dirname, "public"))); // serve frontend files
+app.use(express.static(path.join(__dirname, "public"))); 
 
-// MongoDB client
+
 let client;
 let db;
 let Courses;
 let Orders;
 
-// === 22 Initial Courses ===
 const initialCourses = [
   { title: "English Basics", instructor: "John Doe", category: "English", location: "USA", price: 49.99, rating: 4.5, spaces: 10, cover: "https://picsum.photos/seed/english/400/250" },
   { title: "French Advanced", instructor: "Marie Curie", category: "French", location: "France", price: 79.99, rating: 4.8, spaces: 8, cover: "https://picsum.photos/seed/french/400/250" },
@@ -44,7 +42,7 @@ const initialCourses = [
   { title: "Norwegian Basics", instructor: "Lars Hansen", category: "Norwegian", location: "Norway", price: 49.99, rating: 4.3, spaces: 8, cover: "https://picsum.photos/seed/norwegian/400/250" }
 ];
 
-// Helper: convert _id to string for JSON
+
 function toSerializable(obj) {
   if (!obj) return obj;
   if (Array.isArray(obj)) return obj.map(toSerializable);
@@ -53,7 +51,7 @@ function toSerializable(obj) {
   return out;
 }
 
-// Connect to MongoDB and start server
+
 async function startServer() {
   try {
     client = new MongoClient(process.env.MONGO_URI);
@@ -64,7 +62,7 @@ async function startServer() {
 
     console.log("MongoDB connected");
 
-    // Preload courses if empty
+    
     const count = await Courses.countDocuments();
     if (count === 0) {
       await Courses.insertMany(initialCourses);
@@ -85,9 +83,7 @@ async function startServer() {
 
 startServer();
 
-// ==================== API ROUTES ====================
 
-// Courses
 app.get("/api/courses", async (req, res) => {
   try {
     const list = await Courses.find().toArray();
@@ -122,7 +118,7 @@ app.post("/api/courses", async (req, res) => {
   }
 });
 
-// Orders
+
 app.get("/api/orders", async (req, res) => {
   try {
     const ordersList = await Orders.find().toArray();
@@ -177,7 +173,7 @@ app.post("/api/orders", async (req, res) => {
   }
 });
 
-// Delete order
+
 app.delete("/api/orders/:id", async (req, res) => {
   try {
     const id = req.params.id;
@@ -193,7 +189,7 @@ app.delete("/api/orders/:id", async (req, res) => {
   }
 });
 
-// Catch-all SPA route
+
 app.get("*", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "index.html"));
 });
