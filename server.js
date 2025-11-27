@@ -193,3 +193,32 @@ app.delete("/api/orders/:id", async (req, res) => {
 app.get("*", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "index.html"));
 });
+
+// ==========================
+// UPDATE COURSE (PUT)
+// ==========================
+app.put("/api/courses/:id", async (req, res) => {
+  try {
+    const id = req.params.id;
+    if (!ObjectId.isValid(id)) {
+      return res.status(400).json({ error: "Invalid course ID" });
+    }
+
+    const updates = req.body;
+
+    const result = await Courses.updateOne(
+      { _id: new ObjectId(id) },
+      { $set: updates }
+    );
+
+    if (result.matchedCount === 0) {
+      return res.status(404).json({ error: "Course not found" });
+    }
+
+    res.json({ success: true, message: "Course updated successfully" });
+
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Could not update course" });
+  }
+});
